@@ -1,5 +1,5 @@
 # EBIRAH - anonymous mixer for Binance Smart Chain 
-based on Tornado Cash [Tornado readme](./tornado.md)
+based on Tornado Cash [Tornado readme](./Tornado.md)
 
 ## EBRH token 
 
