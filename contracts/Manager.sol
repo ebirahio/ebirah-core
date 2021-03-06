@@ -38,7 +38,7 @@ contract Manager {
 
   function collectFarmingReward() public {
       require(farmingReward[msg.sender] > 0, "No farming reward colelcted");
-      IERC20(ebrh).transfer(msg.sender, farmingReward[msg.sender]);
+      _safeErc20Transfer(ebrh, msg.sender, farmingReward[msg.sender]);
       farmingReward[msg.sender] = 0;
   }
 
@@ -73,7 +73,7 @@ contract Manager {
       uint256 balance = IERC20(_token).balanceOf(address(this));
       if(operatorFeePct > 0 ) {
           uint256 operatorFee = balance / 10000 * operatorFeePct;
-          IERC20(_token).transfer(operator, operatorFee);
+          _safeErc20Transfer(_token, operator, operatorFee);
           balance -= operatorFee;
       } 
     
@@ -95,4 +95,19 @@ contract Manager {
       require(outAmount > 0, "Cannot make a swap");
       IPancakeRouter01(router).swapExactTokensForTokens(balance, outAmount, path, address(this), block.number);
   }
+
+  function _safeErc20Transfer(address _token, address _to, uint256 _amount) internal {
+    (bool success, bytes memory data) = _token.call(abi.encodeWithSelector(0xa9059cbb /* transfer */, _to, _amount));
+    require(success, "not enough tokens");
+
+    // if contract returns some data lets make sure that is `true` according to standard
+    if (data.length > 0) {
+      require(data.length == 32, "data length should be either 0 or 32 bytes");
+      success = abi.decode(data, (bool));
+      require(success, "not enough tokens. Token returns false.");
+    }
+  }
+
 }
+
+
