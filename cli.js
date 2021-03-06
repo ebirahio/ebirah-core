@@ -20,6 +20,7 @@ const program = require('commander')
 
 let web3, tornado, circuit, proving_key, groth16, erc20, senderAccount, netId
 let MERKLE_TREE_HEIGHT, ETH_AMOUNT, TOKEN_AMOUNT, PRIVATE_KEY
+let startBlock = 0 
 
 /** Whether we are in a browser or node.js */
 const inBrowser = (typeof window !== 'undefined')
@@ -117,7 +118,7 @@ async function deposit({ currency, amount }) {
 async function generateMerkleProof(deposit) {
   // Get all deposit events from smart contract and assemble merkle tree from them
   console.log('Getting current state from ebirah contract')
-  const events = await tornado.getPastEvents('Deposit', { fromBlock: 0, toBlock: 'latest' })
+  const events = await tornado.getPastEvents('Deposit', { fromBlock: startBlock, toBlock: 'latest' })
   const leaves = events
     .sort((a, b) => a.returnValues.leafIndex - b.returnValues.leafIndex) // Sort events in chronological order
     .map(e => e.returnValues.commitment)
@@ -621,6 +622,9 @@ async function main() {
         let currency = 'bnb'
         let amount = '0.1'
         await init({ rpc: program.rpc, currency, amount })
+        if ( netId == 1337 ) {
+          startBlock = web3.eth.blockNumber
+        }
         let noteString = await deposit({ currency, amount })
         let parsedNote = parseNote(noteString)
         await withdraw({ deposit: parsedNote.deposit, currency, amount, recipient: senderAccount, relayerURL: program.relayer })

@@ -15,15 +15,18 @@ import "./Tornado.sol";
 
 contract ERC20Tornado is Tornado {
   address public token;
+  address public manager;
 
   constructor(
     IVerifier _verifier,
     uint256 _denomination,
     uint32 _merkleTreeHeight,
     address _operator,
+    address _manager,
     address _token
   ) Tornado(_verifier, _denomination, _merkleTreeHeight, _operator) public {
     token = _token;
+    manager = _manager;
   }
 
   function _processDeposit() internal {
