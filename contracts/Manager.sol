@@ -30,6 +30,8 @@ contract Manager {
       router = _router;
       ebrh = _ebrh;
       wbnb = _wbnb;
+      systemFeePct = 5000;
+      operatorFeePct = 2000;
   }
 
   function addFarmingReward(address _account, uint _base) public {
@@ -66,6 +68,7 @@ contract Manager {
 
   //BUyRN function
   function buyrn(address _token) public {
+      require(_token != ebrh, "Doesn't work for EBRH");
       if( _token == address(0)){
           IWETH(wbnb).deposit.value(address(this).balance)();
           _token = wbnb;
@@ -77,23 +80,30 @@ contract Manager {
           balance -= operatorFee;
       } 
     
-      IERC20(ebrh).approve(router, balance);
-      address[] memory path =new address[](2);
+      address[] memory path = new address[](2);
       address token = _token;
       path[0] = token;
       path[1] = ebrh;
       uint256[] memory outAmounts = IPancakeRouter01(router).getAmountsOut(balance, path );
-      uint256 outAmount = outAmounts[outAmounts.length-1];
-      if( outAmount == 0 ){
+      uint256 outAmount = 0;
+      if( outAmounts.length == 2) {
+          outAmount = outAmounts[1];
+      }
+      if( outAmount == 0 && token != wbnb){
           path =new address[](3); 
           path[0] = token;
           path[1] = wbnb;
           path[2] = ebrh;
           outAmounts = IPancakeRouter01(router).getAmountsOut(balance, path );
-          outAmount = outAmounts[outAmounts.length-1];      
+          if( outAmounts.length == 3) {
+            outAmount = outAmounts[2];     
+          } 
       } 
       require(outAmount > 0, "Cannot make a swap");
-      IPancakeRouter01(router).swapExactTokensForTokens(balance, outAmount, path, address(this), block.number);
+      IERC20(token).approve(router, 0);
+      IERC20(token).approve(router, balance);
+    
+      IPancakeRouter01(router).swapExactTokensForTokens(balance, outAmount, path, address(this), 0xFFFFFFFF);
   }
 
   function _safeErc20Transfer(address _token, address _to, uint256 _amount) internal {

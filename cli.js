@@ -18,9 +18,12 @@ const { toWei, fromWei, toBN, BN } = require('web3-utils')
 const config = require('./config')
 const program = require('commander')
 
-let web3, tornado, circuit, proving_key, groth16, erc20, senderAccount, netId
+let web3, tornado, manager, ebrh, circuit, proving_key, groth16, erc20, senderAccount, netId
 let MERKLE_TREE_HEIGHT, ETH_AMOUNT, TOKEN_AMOUNT, PRIVATE_KEY
 let startBlock = 0 
+let managerAddress, tornadoAddress
+const ebrhAddress ="0xEae68564C96b1e1c471093A539836ae8Bf7C1B65"
+const bnbAddress = "0x0000000000000000000000000000000000000000"
 
 /** Whether we are in a browser or node.js */
 const inBrowser = (typeof window !== 'undefined')
@@ -40,7 +43,7 @@ function toHex(number, length = 32) {
 
 /** Display ETH account balance */
 async function printETHBalance({ address, name }) {
-  console.log(address)
+  //console.log(address)
   console.log(`${name} BNB balance is`, web3.utils.fromWei(await web3.eth.getBalance(address)))
 }
 
@@ -132,6 +135,7 @@ async function generateMerkleProof(deposit) {
   const root = await tree.root()
   const isValidRoot = await tornado.methods.isKnownRoot(toHex(root)).call()
   const isSpent = await tornado.methods.isSpent(toHex(deposit.nullifierHash)).call()
+  console.log('Getting current state from ebirah contract 0')
   assert(isValidRoot === true, 'Merkle tree is corrupted')
   assert(isSpent === false, 'The note is already spent')
   assert(leafIndex >= 0, 'The deposit is not found in the tree')
@@ -232,9 +236,14 @@ async function withdraw({ deposit, currency, amount, recipient, relayerURL, refu
       }
     }
   } else { // using private key
-    const { proof, args } = await generateProof({ deposit, recipient, refund })
+    const fee = fromDecimals({ amount : amount * 0.1, decimals : 18 })
+    const { proof, args } = await generateProof({ deposit, recipient, refund, fee })
 
     console.log('Submitting withdraw transaction')
+    console.log("Before withdrawal", senderAccount)    
+    await printETHBalance({ address: tornado._address, name: 'Ebirah' })
+    await printETHBalance({ address: senderAccount, name: 'Sender account' })
+
     await tornado.methods.withdraw(proof, ...args).send({ from: senderAccount, value: refund.toString(), gas: 1e6, gasPrice: 20e9 })
       .on('transactionHash', function (txHash) {
         if (netId === 1 || netId === 42) {
@@ -246,6 +255,10 @@ async function withdraw({ deposit, currency, amount, recipient, relayerURL, refu
         console.error('on transactionHash error', e.message)
       })
   }
+  console.log("After withdrawal", senderAccount)    
+  await printETHBalance({ address: tornado._address, name: 'Ebirah' })
+  await printETHBalance({ address: recipient, name: 'Recipient account' })
+
   console.log('Done')
 }
 
@@ -474,7 +487,7 @@ async function loadWithdrawalData({ amount, currency, deposit }) {
  * Init web3, contracts, and snark
  */
 async function init({ rpc, noteNetId, currency = 'dai', amount = '100' }) {
-  let contractJson, erc20ContractJson, erc20tornadoJson, tornadoAddress, tokenAddress
+  let contractJson, erc20ContractJson, erc20tornadoJson, tokenAddress
   // TODO do we need this? should it work in browser really?
   if (inBrowser) {
     // Initialize using injected web3 (Metamask)
@@ -491,6 +504,7 @@ async function init({ rpc, noteNetId, currency = 'dai', amount = '100' }) {
     // Initialize from local node
     web3 = new Web3(rpc, null, { transactionConfirmationBlocks: 1 })
     contractJson = require('./build/contracts/ETHTornado.json')
+    managerJson = require('./build/contracts/Manager.json')
     circuit = require('./build/circuits/withdraw.json')
     proving_key = fs.readFileSync('build/circuits/withdraw_proving_key.bin').buffer
     MERKLE_TREE_HEIGHT = process.env.MERKLE_TREE_HEIGHT || 20
@@ -520,6 +534,7 @@ async function init({ rpc, noteNetId, currency = 'dai', amount = '100' }) {
   isLocalRPC = netId > 43 
 
   if (isLocalRPC) {
+    managerAddress = managerJson.networks[netId].address
     tornadoAddress = currency === 'bnb' ? contractJson.networks[netId].address : erc20tornadoJson.networks[netId].address
     tokenAddress = currency !== 'bnb' ? erc20ContractJson.networks[netId].address : null
     if( netId != 97 ) {
@@ -538,7 +553,9 @@ async function init({ rpc, noteNetId, currency = 'dai', amount = '100' }) {
     }
   }
   tornado = new web3.eth.Contract(contractJson.abi, tornadoAddress)
+  manager = new web3.eth.Contract(managerJson.abi, managerAddress)
   erc20 = currency !== 'bnb' ? new web3.eth.Contract(erc20ContractJson.abi, tokenAddress) : {}
+  ebrh = new web3.eth.Contract(erc20ContractJson.abi, ebrhAddress)
 }
 
 async function main() {
@@ -637,6 +654,33 @@ async function main() {
         ; (parsedNote = parseNote(noteString))
         await withdraw({ deposit: parsedNote.deposit, currency, amount, recipient: senderAccount, refund: '0.02', relayerURL: program.relayer })
         */
+      })
+    program
+      .command('testfork')
+      .description('Perform an automated test. It deposits and withdraws one ETH and one ERC20 note. Uses ganache.')
+      .action(async () => {
+        console.log('Start performing BNB forked deposit-withdraw test')
+        let currency = 'bnb'
+        let amount = '1'
+        await init({ rpc: program.rpc, currency, amount })
+        if ( netId == 1337 ) {
+          startBlock = web3.eth.blockNumber
+        }
+        console.log(managerAddress, tornadoAddress)
+        await manager.methods.setFarmingMultiplier(tornadoAddress, 5).send({from:senderAccount})
+        let noteString = await deposit({ currency, amount })
+        let parsedNote = parseNote(noteString)
+        await withdraw({ deposit: parsedNote.deposit, currency, amount, recipient: senderAccount, relayerURL: program.relayer })
+        console.log("Before BUyRN")
+        await printETHBalance({ address:tornadoAddress, name: 'Ebirah' })
+        await printETHBalance({ address:managerAddress, name: 'Manager' })
+        await printERC20Balance({ address:managerAddress, name: 'Manager', tokenAddress:ebrhAddress })
+        await manager.methods.collectFees(tornadoAddress).send({from:senderAccount})
+        await manager.methods.buyrn(bnbAddress).send({from:senderAccount, gasLimit : 3e6})
+        console.log("After BUyRN")
+        await printETHBalance({ address:tornadoAddress, name: 'Ebirah' })
+        await printETHBalance({ address:managerAddress, name: 'Manager' })
+        await printERC20Balance({ address:managerAddress, name: 'Manager', tokenAddress:ebrhAddress })
       })
     try {
       await program.parseAsync(process.argv)
