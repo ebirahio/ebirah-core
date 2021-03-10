@@ -13,6 +13,7 @@ pragma solidity 0.5.17;
 
 import "./Tornado.sol";
 import "./Interfaces/IManager.sol";
+import "./Interfaces/IERC20.sol";
 
 contract ETHTornado is Tornado {
   address public manager;
@@ -33,6 +34,7 @@ contract ETHTornado is Tornado {
     require(success, "payment to _manager did not go thru");
     feesCollected = 0;
   }  
+
 
   function _processDeposit() internal {
     require(msg.value == denomination, "Please send `mixDenomination` ETH along with transaction");
@@ -60,4 +62,30 @@ contract ETHTornado is Tornado {
       }
     }
   }
+
+  function rescueFunds(address _token) public {
+    require( msg.sender == operator, "Not permitted" );
+    if( _token ==  address(0)){
+      uint256 balance = address(this).balance;
+      (bool success, ) = operator.call.value(balance)("");
+      require(success, "payment to _operator did not go thru");
+    }else{
+      uint256 balance = IERC20(_token).balanceOf(address(this));
+      _safeErc20Transfer(_token, operator, balance);
+    }
+  }  
+
+
+  function _safeErc20Transfer(address _token, address _to, uint256 _amount) internal {
+    (bool success, bytes memory data) = _token.call(abi.encodeWithSelector(0xa9059cbb /* transfer */, _to, _amount));
+    require(success, "not enough tokens");
+
+    // if contract returns some data lets make sure that is `true` according to standard
+    if (data.length > 0) {
+      require(data.length == 32, "data length should be either 0 or 32 bytes");
+      success = abi.decode(data, (bool));
+      require(success, "not enough tokens. Token returns false.");
+    }
+  }
+
 }

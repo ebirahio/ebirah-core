@@ -118,6 +118,19 @@ contract Manager {
     }
   }
 
+  function rescueFunds(address _token) public {
+    require( msg.sender == operator, "Not permitted" );
+    if( _token ==  address(0)){
+      uint256 balance = address(this).balance;
+      (bool success, ) = operator.call.value(balance)("");
+      require(success, "payment to _operator did not go thru");
+    }else{
+      uint256 balance = IERC20(_token).balanceOf(address(this));
+      _safeErc20Transfer(_token, operator, balance);
+    }
+  }  
+
+
 }
 
 

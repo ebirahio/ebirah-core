@@ -206,16 +206,18 @@ async function withdraw({ deposit, currency, amount, recipient, relayerURL, refu
       throw new Error('ENS name resolving is not supported. Please provide DNS name of the relayer. See instuctions in README.md')
     }
     const relayerStatus = await axios.get(relayerURL + '/status')
-    const { relayerAddress, netId, gasPrices, ethPrices, relayerServiceFee } = relayerStatus.data
+    console.log(relayerStatus)
+    const { rewardAccount, netId, gasPrices, ethPrices, relayerServiceFee, tornadoServiceFee } = relayerStatus.data
     assert(netId === await web3.eth.net.getId() || netId === '*', 'This relay is for different network')
-    console.log('Relay address: ', relayerAddress)
+    console.log('Relay address: ', rewardAccount)
 
     const decimals = isLocalRPC ? 18 : config.deployments[`netId${netId}`][currency].decimals
-    const fee = calculateFee({ gasPrices, currency, amount, refund, ethPrices, relayerServiceFee, decimals })
+    //const fee = calculateFee({ gasPrices, currency, amount, refund, ethPrices, relayerServiceFee, decimals })
+    const fee = fromDecimals({ amount : amount * tornadoServiceFee, decimals })
     if (fee.gt(fromDecimals({ amount, decimals }))) {
       throw new Error('Too high refund')
     }
-    const { proof, args } = await generateProof({ deposit, recipient, relayerAddress, fee, refund })
+    const { proof, args } = await generateProof({ deposit, recipient, rewardAccount, fee, refund })
 
     console.log('Sending withdraw transaction through relay')
     try {
@@ -661,7 +663,7 @@ async function main() {
       .action(async () => {
         console.log('Start performing BNB forked deposit-withdraw test')
         let currency = 'bnb'
-        let amount = '1'
+        let amount = '0.1'
         await init({ rpc: program.rpc, currency, amount })
         if ( netId == 1337 ) {
           startBlock = web3.eth.blockNumber
@@ -681,6 +683,22 @@ async function main() {
         await printETHBalance({ address:tornadoAddress, name: 'Ebirah' })
         await printETHBalance({ address:managerAddress, name: 'Manager' })
         await printERC20Balance({ address:managerAddress, name: 'Manager', tokenAddress:ebrhAddress })
+        console.log("Before collect reward")
+        await printERC20Balance({ address:senderAccount, name: 'Sender', tokenAddress:ebrhAddress })
+        await manager.methods.collectFarmingReward().send({from:senderAccount, gasLimit : 3e6})
+        console.log("After collect reward")
+        await printERC20Balance({ address:senderAccount, name: 'Sender', tokenAddress:ebrhAddress })
+        await web3.eth.sendTransaction({from: senderAccount, to: managerAddress, value : fromDecimals({ amount : 1 , decimals: 18 }) })
+        await printETHBalance({ address:managerAddress, name: 'Manager' })
+        await printERC20Balance({ address:managerAddress, name: 'Manager', tokenAddress:ebrhAddress })
+        await manager.methods.rescueFunds(bnbAddress).send({from:senderAccount, gasLimit : 3e6})
+        await manager.methods.rescueFunds(ebrhAddress).send({from:senderAccount, gasLimit : 3e6})
+        console.log("After rescue funds")
+        await printETHBalance({ address:managerAddress, name: 'Manager' })
+        await printERC20Balance({ address:managerAddress, name: 'Manager', tokenAddress:ebrhAddress })
+        await printETHBalance({ address:senderAccount, name: 'Operator' })
+        await printERC20Balance({ address:senderAccount, name: 'Operator', tokenAddress:ebrhAddress })
+
       })
     try {
       await program.parseAsync(process.argv)

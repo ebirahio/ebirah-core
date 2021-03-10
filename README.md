@@ -3,7 +3,7 @@ based on Tornado Cash [Tornado readme](./Tornado.md)
 
 ## EBRH token 
 
-Is designed as rewardable ERC20 token. WBNB-EBRH pair is listed on Pancake Swap.
+Is designed as rewardable BEP20 token on Binance Smart Chain. WBNB-EBRH pair is listed on Pancake Swap.
 
 ## Manager contract
 
